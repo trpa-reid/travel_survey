@@ -1,0 +1,711 @@
+---
+title: "Summer Travel Survey"
+author: "Tahoe Regional Planning Agency"
+date: "October, 2018"
+output:
+  html_document:
+    highlight: tango
+    number_sections: yes
+    theme: flatly
+    toc: yes
+    toc_depth: 3
+    toc_float:
+      collapsed: yes
+      smooth_scroll: no
+---
+```{r, echo=FALSE}
+htmltools::img(src = knitr::image_uri("H:/transportation monitoring/winter_summer_mode_travel_surveys/summer_2018/TRPA Survey/report/TRPALogo_COLOR_Transparent.png"),
+               alt = 'logo', 
+               style = 'position:absolute; top:0px; right:0px; padding:0px; max-width:30% ;')
+```
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(pacman)
+p_load(tidyverse,rgdal, dplyr, xlsx, lubridate,animation,tmap, sf, leaflet, geojsonio, anytime, plotly, knitr, DT, stringi, htmltools, ggplot2, ggthemes, wordcloud,gganimate, ggmap, maps)
+knitr::opts_chunk$set(echo = FALSE)
+
+all1<-geojson_read("H:/transportation monitoring/winter_summer_mode_travel_surveys/summer_2018/TRPA Survey/report/final_survey_dataset.geojson", what="sp") %>% st_as_sf()
+
+fgdb2 <- "H:/transportation monitoring/winter_summer_mode_travel_surveys/summer_2018/TRPA Survey/data/final/Travel_Locations.gdb"
+
+sched <- read.csv("H:/transportation monitoring/winter_summer_mode_travel_surveys/summer_2018/TRPA Survey/survey_development/detailed_surveyor_schedule.csv", stringsAsFactors=FALSE)
+
+sites<-st_read(dsn="H:/transportation monitoring/winter_summer_mode_travel_surveys/summer_2018/TRPA Survey/data/final/Travel_Locations.gdb", layer="Travel_Survey_Locations") %>%
+  st_transform(crs=4326)
+
+county <- geojson_read("https://opendata.arcgis.com/datasets/85a2e8e4bf994742a5855c1339517681_16.geojson", what='sp') %>% st_as_sf()
+
+data <- read.csv("H:/transportation monitoring/winter_summer_mode_travel_surveys/summer_2018/TRPA Survey/report/travel_survey_data.csv", stringsAsFactors=FALSE) %>%
+  st_as_sf(coords=c("longitude","latitude"), na.fail=F) %>%
+  st_set_crs(st_crs(county)) %>%
+  st_join(county) %>%
+  mutate(COUNTY=ifelse(survey_id=="{1D67DA2D-9A61-4311-845E-2E55E331B425}","PLACER", as.character(COUNTY)))
+```
+```{r, out.width = "400px", echo=FALSE}
+knitr::include_graphics("H:/transportation monitoring/winter_summer_mode_travel_surveys/summer_2018/TRPA Survey/report/photo.png")
+
+```
+
+# Introduction
+
+This report summarises TRPA's 2018 Summer Travel Survey, which was conducted in late-August of 2018. Since 2006 TRPA has conducted basin-wide travel surveys every two years in order to better understand basic travel characteristics of both residents and visitors. The data collected - which includes data points such as mode share, origin-destinations, and trip purpose - is used for a variety of purposes at TRPA including regional performance metrics, project planning, and travel demand modelling.  The following report highlights development, methodology, logistics, and data results of the 2018 Summer Travel Survey.
+
+## Survey Purpose
+
+The purpose of the survey was to capture accurate and reliable travel data of permanent residents, seasonal residents, commuters, and visitors to commercial and recreational sites within the Tahoe Basin.
+
+## Survey Design
+
+The survey design was a non-random, intercept survey. Field surveyors traveled to popular sites around the Basin and asked people to voluntarily participate in a series of survey questions. Because the sample was a choice sample - survey respondents chose to participate in the survey - the resulting data set was neither weighted nor expanded to reflect the entire population.
+
+## Survey Summary
+A total of 1048 survey interviews were completed. Of these, 281 were with full-time residents, 82 were with seasonal residents, 156 were with day visitors, 521 were overnight visitors, and 8 were commuters. Surveyors were instructed to tally any travel party that refused to participate in the study. The response rate of the survey was calculated by tallying the refusal rate compared to the number of completed surveys. The response rate was 63 percent. See Section 3: Data Results for further details on survey data results.
+
+```{r, echo=FALSE,message=FALSE, warning=FALSE} 
+datatable(data %>% as.tibble() %>%
+            filter(survey_rejected=="no" & gps_point_category=="survey location") %>%
+            count(person_type, COUNTY) %>%
+  spread(COUNTY, n) %>% 
+    select(person_type, CARSON,DOUGLAS,`EL DORADO`,  PLACER, WASHOE ) %>%
+    rowwise() %>%
+    mutate(TOTAL = sum(c(CARSON,DOUGLAS,`EL DORADO`,  PLACER, WASHOE), na.rm=T)),
+   # add_row(person.type.rc = "Total", CARSON = sum(CARSON, na.rm=T), DOUGLAS = sum(DOUGLAS, na.rm=T), # `EL DORADO` = sum(`EL DORADO`, na.rm=T),PLACER = sum(PLACER, na.rm=T), 
+           # WASHOE = sum(WASHOE, na.rm=T))
+  rownames=F,options=list(dom='t', 
+          columnDefs = list(list(className = 'dt-center', targets = 0:1))), 
+  colnames= c("Person Type", "Carson", "Douglas", "El Dorado", "Placer", "Washoe", "Total # Surveys"),
+  class = 'cell-border stripe')
+```
+
+# Methodology
+
+Historically, TRPA has contracted out the majority of the travel survey work. The 2018 survey is the first time that TRPA has conducted the survey in house using staff time for the entirety of the survey. TRPA staff played the lead role in all aspects of the survey including site selection, development of data collection technologies, survey questions, field surveying, and data analysis. 
+
+## Surveyor Selection and Training
+
+A total of 18 different TRPA staff members served as field surveyors. Prior to going out in the field staff members were trained in survey techniques and practiced conducting mock-interviews using the tablet data collection instrument.
+ 
+## Survey Sites
+TRPA staff selected 50 survey sites. The majority of the sites were selected to align with past surveys, so that individual site data could be compared over time. Previously, sites had been selected to incorporate a balance between the north and shores, a balance between commercial and recreational locations, and based upon anticipated activity level.
+
+```{r, echo=FALSE}
+popup1 <- paste0("<strong>Survey Location Name: </strong>", 
+                     sites$LOC_NAME) 
+leaflet(sites, width="80%") %>% 
+  addCircleMarkers(popup=popup1, radius=10, color="white", opacity=1,fillColor = "#bc0114",
+                   weight=1, fillOpacity = .5) %>%
+  addProviderTiles("Wikimedia") %>%
+  addLegend("topright",labels="Survey Sites" , colors="#bc0114")
+```
+```{r, echo=FALSE, message=F, warning=F}
+datatable(data %>% as.tibble() %>%
+            filter(survey_rejected=="no" & gps_point_category=="survey location") %>%
+            count(survey_location),
+          extensions = 'Buttons',
+rownames=F,options=list(pageLength = 6, dom = 'Bfrtip',buttons = c('csv','pdf'), 
+          columnDefs = list(list(className = 'dt-center', targets = 0:1))), 
+  colnames= c("Survey Location", "Number of Completed Surveys"),
+  class = 'cell-border stripe')
+```
+
+
+## Data collection methodology
+
+All data collection activities were conducted by TRPA staff using intercept interview methodology. Staff interviews averaged four to five minutes in length and were conducted with one member of a traveling party (visitor, seasonal resident, or full-time resident) age 18 or older. 
+
+## Publicity
+
+TRPA was responsible for the development and placement of a comprehensive media notice detailing the sponsor, purpose, and dates of the upcoming study. The media notice was released to local print and electronic media sources approximately four days prior to data collection. See Appendix C for the Press Release.
+
+## Logistics
+
+Following survey site selection, TRPA contacted appropriate individuals at each site to advise about the study purpose, secure permission to conduct survey activities at the site, and define the survey timeframe. Upon securing permission to survey at the sites, TRPA conducted a site review at each of the 50 survey locations prior to the start of data collection in order to identify surveyor staging locations that would minimize bias for encountering respondents traveling by one specific travel mode. For example, surveyors were not staged in parking lots where they would encounter nearly 100 percent of travel by private automobile. Nor were surveyors staged near bus stop locations where the majority of respondents would be traveling by public transportation.
+A deliberate effort was made to stage surveyors at locations at each site that allowed for the highest degree of intercepting potential respondents who may travel to the site by a variety of travel modes. These included main entrances (at parks for example), sidewalks (in front of commercial centers), or main activity points (such as beaches and trailheads). 
+
+## Survey Dates
+
+Data collection was conducted over twelve days, from August 16 to August 27, 2018. Sites to be surveyed each day were scheduled based on their proximity to each other and anticipated activity level on the day of the week they were scheduled to be surveyed. 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+datatable(sched %>% mutate(location = stri_trans_totitle(location)) %>%
+            select(location, date, start_time, end_time), extensions= "Buttons",
+          rownames=F,options=list(pageLength = 10, dom = 'Bfrtip',buttons = c('csv','pdf'),
+          columnDefs = list(list(className = 'dt-center', targets = 0:3))), 
+  colnames= c("Survey Location", "Date", "Start Time", "End Time"),
+  class = 'cell-border stripe')
+#gganimate
+# test<-all1 %>% count(survey_id, loc_name, survey_date) %>% count(loc_name, survey_date) %>% data.frame %>%
+#       select(loc_name, nn, survey_date) %>%
+#   left_join(sites, by=c("loc_name"="LOC_NAME")) %>% st_as_sf()
+# myMap <- get_map(location = c(lat=39.096085, lon=-120.033975),
+#           source = "google",
+#           maptype = "roadmap", crop = FALSE,
+#           zoom = 10)
+# ggmap(myMap) +
+#   geom_sf(data=test, aes(size=nn), inherit.aes = FALSE,colour="#950E1C" ) +
+#   scale_size(range = c(1, 12)) +
+#   theme(axis.text.x = element_blank(),axis.text.y = element_blank(),
+#         axis.title.x = element_blank(),axis.title.y = element_blank(),
+#         axis.ticks.x = element_blank(),axis.ticks.y = element_blank(),
+#         legend.position="none") +
+#   labs(title = 'Survey Date: {frame_time}') +
+# transition_time(as.Date(survey_date))
+```
+
+## Survey Instrument
+
+Data was collected through a tablet-based intercept survey; surveyors asked respondents questions and recorded answers into the tablet in real time. The survey was designed and implemented using ESRI's Survey123 mobile data collection software and data was stored in TRPA's Enterprise Database. The survey consisted of around 20 questions, with a unique set of questions designed for residents and visitors. A copy of the questionnaire program is in Appendix A.
+
+# Data Results
+
+This section provides a few key data results of the 2018 Summer Travel Survey survey. Because the survey interviews were conducted using a choice sample, the results presented represent only those participants who completed an interview. The final data set contains 1,048 survey records. 
+
+## Mode Share
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+a<- data %>% 
+  filter(survey_rejected=="no" & gps_point_category=="survey location") %>%
+  count(trip_mode) %>%
+  mutate(total=sum(n, na.rm=T)) %>%
+  rowwise %>%
+  mutate(percent=n/total) %>%
+  ggplot(aes(reorder(trip_mode, -percent), percent,
+             text=paste("Travel Mode:", trip_mode,
+                        '<br>% Of All Surveys:',paste0(round(percent * 100 , 1),"%"),
+                        "<br>Number of Surveys:", n))) + 
+  geom_bar(stat="identity") +
+  theme_minimal()  +
+  scale_y_continuous(labels=scales::percent) +
+  scale_x_discrete(labels=c("Vehicle", "Walk","Bicycle","Motorcycle","Other","Private Shuttle", "Public Shuttle","Scooter","Para-Transit","Ferry","Rideshare (Uber/Lyft)", "Gondola","Taxi")) +
+     labs(x="Mode of Trip to Survey Location", y="",title = "" , caption = "(based on data from ...)") +
+  theme(axis.title.y=element_text( margin = margin(r=20)),
+        axis.title.x=element_text(hjust=.7),
+        axis.text.x=element_text(angle=45, hjust=1))
+ggplotly(a, tooltip="text") %>% config(displayModeBar = T)
+```
+
+## Trip Purpose
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+a<-data %>% 
+  filter(survey_rejected=="no" & gps_point_category=="survey location") %>%
+  count(trip_purpose) %>%
+  mutate(total=sum(n)) %>%
+  rowwise %>%
+  mutate(percent=n/total) %>%
+  filter(!is.na(trip_purpose)) %>%
+  ggplot(aes(reorder(trip_purpose, -percent), percent,
+             text=paste("Trip Purpose:", trip_purpose,
+                        '<br>% Of All Surveys:',paste0(round(percent * 100 , 1),"%"),
+                        "<br>Number of Surveys:", n))) + geom_bar(stat="identity")+ theme_minimal() +
+  theme(axis.text.x = element_text(angle=45, hjust=1), 
+       axis.title.y=element_text( margin = margin(r=20))) +
+  scale_y_continuous(labels=scales::percent) +
+  xlab("Primary Purpose of Trip to Survey Location") +
+  scale_x_discrete(labels=c("Outdoor Rec","Work", "Restaurant", "Minor Shopping","Other","Tourist Stop", "Personal","Friend","Casino","Entertainment","Loop","Indoor Rec","Work Related","Home", "Ride Along","Major Shopping","Pick up","Medical","Religious","School")) +
+  ylab ("")
+ggplotly(a, tooltip="text") %>% config(displayModeBar = T)
+```
+
+## Trip Travel Time
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+a<-data %>% 
+  filter(survey_rejected=="no" & gps_point_category=="survey location") %>%
+  count(trip_travel_time) %>%
+  mutate(total=sum(n)) %>%
+  rowwise %>%
+  mutate(percent=n/total) %>%
+  ggplot(aes(trip_travel_time, percent,
+             text=paste("Trip Travel Time:", trip_travel_time,
+                        '<br>% Of All Surveys:',paste0(round(percent * 100 , 1),"%"),
+                        "<br>Number of Surveys:", n))) + geom_bar(stat="identity")+ theme_minimal() +
+    xlab("Time it took to get to survey location from previous location")+
+  scale_y_continuous(labels=scales::percent) +
+  theme(axis.title.y=element_text( margin = margin(r=20)),
+        axis.title.x=element_text( margin = margin(t=20))) +
+  ylab ("") +
+   scale_x_discrete(limits=c("5","10","15","30","45","one_hour","over_hour"),
+      labels=c("5 min","10 min", "15 min", "30 min", "45 min", "one hour", "over an hour"))
+ggplotly(a, tooltip="text") %>% config(displayModeBar = T)
+```
+
+## Duration of Visit to Site
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+a<-data %>% 
+  filter(survey_rejected=="no" & gps_point_category=="survey location") %>%
+  mutate(hours=stay_duration) %>%
+  count(hours) %>%
+  mutate(total=sum(n)) %>%
+  rowwise() %>%
+  mutate(percent=n/total) %>%
+  filter(!is.na(hours)) %>%
+  ggplot(aes(hours, percent,
+             text=paste("Duration of Visit to Site:", hours,
+                        '<br>% Of All Surveys:',paste0(round(percent * 100 , 1),"%"),
+                        "<br>Number of Surveys:", n))) + geom_bar(stat="identity")+ theme_minimal() +
+  xlab("") + ylab("") +
+  theme(axis.title.x=element_text( margin = margin(t=20)),
+        axis.title.y=element_text( margin = margin(r=20))) +
+  scale_y_continuous(labels=scales::percent)  +
+   scale_x_discrete(limits=c("0_5_mins","5_15_mins","30_60_mins","1_2_hrs","2_3_hrs","half_day","full_day","multi-day"),
+      labels=c("0-5 min","5-15 min", "30-60 min", "1-2 hrs", "2-3 hrs", "half day", "full day","multi-day"))
+ggplotly(a, tooltip="text") %>% config(displayModeBar = T)
+```
+
+## Travel Party Size
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+a<-data %>% 
+  filter(survey_rejected=="no" & gps_point_category=="survey location") %>% count(travel_size) %>%
+  mutate(total=sum(n)) %>%
+  rowwise() %>%
+  mutate(percent=n/total) %>%
+  filter(!is.na(travel_size)) %>%
+  ggplot(aes(travel_size, percent,
+             text=paste("Travel Party Size:", travel_size,
+                        '<br>% Of All Surveys:',paste0(round(percent * 100 , 1),"%"),
+                        "<br>Number of Surveys:", n))) + geom_bar(stat="identity")+ theme_minimal() +
+   ylab("") + theme()  +
+  xlab("Number of People Traveling Together") +
+  scale_y_continuous(labels=scales::percent) +
+  scale_x_discrete(limits=c("one","two","three","four","five","six","more_than_six"), 
+                   labels=c("One","Two","Three","Four","Five","Six","More than Six")) +
+  theme(axis.title.y=element_text( margin = margin(r=20)))
+ggplotly(a, tooltip="text") %>% config(displayModeBar = T)
+```
+
+## Visitors Home Locations
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+data1 <- data %>% filter(gps_point_category=="permanent home" & person_type != "Full Time Resident") 
+popup <- paste0("<br><strong>Survey Date: </strong>", 
+                data1$survey_date,
+                "<br><strong>Person Type: </strong>", 
+                data1$person_type,
+                "<br><strong>Survey Location Name: </strong>", 
+                data1$survey_location,
+                "<br><strong>Home Country: </strong>", 
+                data1$country,
+                "<br><strong>Home City: </strong>", 
+                data1$city,
+                "<br><strong>Home State: </strong>", 
+                data1$US_state)
+data %>% filter(gps_point_category=="permanent home" & person_type != "Full Time Resident") %>%
+leaflet() %>% 
+  addCircleMarkers(fillColor = "#950E1C" , fillOpacity=.8,popup=popup, radius=5, color="white", 
+                   weight=1) %>% 
+  addLegend("topright",labels="Visitor Home Locations" , colors="#950E1C") %>%
+    addTiles()
+```
+
+## Visitor Purpose
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+a<-data %>%
+  filter(survey_rejected=="no" & gps_point_category=="survey location") %>%
+  count(visitor_purpose) %>%
+  filter(!is.na(visitor_purpose)) %>%
+  mutate(total=sum(n)) %>%
+  rowwise() %>%
+  mutate(percent=n/total) %>%
+  ggplot(aes(reorder(visitor_purpose, -percent), percent,
+             text=paste("Purpose of Visit:", visitor_purpose,
+                        '<br>% Of All Surveys:',paste0(round(percent * 100 , 1),"%"),
+                        "<br>Number of Surveys:", n))) + geom_bar(stat="identity")+ theme_minimal() +
+  theme(axis.title.y=element_text( margin = margin(r=20))) +
+  scale_y_continuous(labels=scales::percent) +
+  xlab("Primary Purpose for Visit to Tahoe (Visitors Only)")+
+  ylab("")
+ggplotly(a, tooltip="text") %>% config(displayModeBar = T)
+```
+
+## Highway Entry Points
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+a<-data %>%
+  filter(survey_rejected=="no" & gps_point_category=="survey location") %>%
+  filter(!is.na(highway)) %>%
+  count(highway) %>%
+  mutate(total=sum(n)) %>%
+  rowwise %>%
+  mutate(percent=n/total) %>%
+  ggplot(aes(reorder(highway, -percent), percent,
+             text=paste("Highway Entry Point:", highway,
+                        '<br>% Of All Surveys:',paste0(round(percent * 100 , 1),"%"),
+             "<br>Number of Surveys:", n))) + geom_bar(stat="identity")+ theme_minimal() +
+  theme(axis.text.x = element_text(angle=45, hjust=1), 
+        axis.title.y=element_text( margin = margin(r=20))) +
+  scale_y_continuous(labels=scales::percent) +
+  xlab("Highway Used to Enter Tahoe Basin (Visitors Only)")+
+  scale_x_discrete(labels=c("Highway 50 Echo Summit","SR 89 Tahoe City", "US 50 Spooner Summit",
+      "SR 267 Kings's Beach", "SR 431 Mount Rose" , "SR 207 Kingsbury", "SR 89 Meyers")) +
+  ylab("")
+ggplotly(a, tooltip="text") %>% config(displayModeBar = T)
+```
+
+## Tahoe Visits Frequency
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+a<-data %>%
+  filter(survey_rejected=="no" & gps_point_category=="survey location") %>%
+  filter(!is.na(vist_numb)) %>%
+  count(vist_numb) %>%
+  mutate(total=sum(n)) %>%
+  rowwise() %>%
+  mutate(percent=n/total) %>%
+  ggplot(aes(vist_numb, percent,
+             text=paste("Number of Annual Visits:", vist_numb,
+                        '<br>% Of All Surveys:',paste0(round(percent * 100 , 1),"%"),
+                        "<br>Number of Surveys:", n))) + geom_bar(stat="identity") + theme_minimal() +
+   ylab("")  +
+  scale_y_continuous(labels=scales::percent) +
+  xlab("Number of Visits to Lake Tahoe in Past Year (Visitors Only)")+
+  theme(axis.title.y=element_text( margin = margin(r=20)))+
+   scale_x_discrete(limits=c("once","two_three","four_five","six_seven","eight_nine","ten_or_more"),
+      labels=c("Once","2-3", "4-5", "6-7", "8-9", "10 or more"))
+ggplotly(a, tooltip="text") %>% config(displayModeBar = T)
+```
+
+## Type of Lodging/Dwelling
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+a<-data %>%
+  filter(survey_rejected=="no" & gps_point_category=="survey location") %>%
+  filter(!is.na(lodging_type)) %>% 
+  count(lodging_type) %>%
+  mutate(total=sum(n)) %>%
+  rowwise %>%
+  mutate(percent=n/total) %>%
+  ggplot(aes(reorder(lodging_type, -percent), percent,
+             text=paste("Lodging Type:", lodging_type,
+                        '<br>% Of All Surveys:',percent,
+                        "<br>Number of Surveys:", n))) + 
+  geom_bar(stat="identity") + theme_minimal() +
+  theme(axis.text.x=element_text(angle=45, hjust=1, face='plain'),
+        axis.title.x=element_blank(), axis.title.y=element_blank(),
+        plot.margin = margin(10, 10, 20, 10)) +
+  scale_y_continuous(labels=scales::percent) + ylab("")
+ggplotly(a, tooltip="text") %>% config(displayModeBar = T)
+```
+
+## Vehicle Size
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+a<-data %>%
+  filter(survey_rejected=="no" & gps_point_category=="survey location") %>%
+  filter(!is.na(vehicle_size)) %>%
+  count(vehicle_size) %>%
+  mutate(total=sum(n)) %>%
+  rowwise %>%
+  mutate(percent=n/total) %>%
+  ggplot(aes(vehicle_size, percent,
+             text=paste("Vehicle Occupancy Entering Tahoe:", vehicle_size,
+                        '<br>% Of All Surveys:',paste0(round(percent * 100 , 1),"%"),
+                        "<br>Number of Surveys:", n))) + geom_bar(stat="identity")+ theme_minimal() +
+  xlab("Vehicle Occupancy of Visitors Entering the Tahoe Basin") + ylab("") + ggtitle("Number of People Traveling in Vehicle")+
+  scale_y_continuous(labels=scales::percent) +
+  scale_x_discrete(limits=c("one", "two","three","four","five","six","more_than_six"), 
+                   labels=c("One","Two","Three","Four","Five","Six", "More Than Six")) +
+  theme(axis.title.y=element_text( margin = margin(r=20)),
+        axis.title.x=element_text( margin = margin(t=20)))
+ggplotly(a, tooltip="text") %>% config(displayModeBar = T)
+```
+
+# Survey Respondent Demographics
+
+## Survey Respondent Types
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+a<-data %>%
+  filter(survey_rejected=="no" & gps_point_category=="survey location") %>%
+  count(person_type) %>%
+  mutate(total=sum(n)) %>%
+  rowwise() %>%
+  mutate(percent=n/total) %>%
+  ggplot(aes(reorder(person_type, -percent), percent,
+             text=paste("Survey Respondent Type:", person_type,
+                        '<br>% Of All Surveys:',paste0(round(percent * 100 , 1),"%"),
+                        "<br>Number of Surveys:", n))) + geom_bar(stat="identity")+ theme_minimal() +
+  theme(axis.title.x=element_blank(),axis.title.y=element_text( margin = margin(r=20))) +
+  ylab("") +
+  scale_y_continuous(labels=scales::percent)
+ggplotly(a, tooltip="text") %>% config(displayModeBar = T)
+```
+
+## Age (of Survey Respondent)
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+a<-data %>%
+  filter(survey_rejected=="no" & gps_point_category=="survey location") %>% 
+  filter(!is.na(age)) %>%
+  count(age) %>%
+  mutate(total=sum(n)) %>%
+  rowwise %>%
+  mutate(percent=n/total) %>%
+  ggplot(aes(age, percent,
+             text=paste("Age of Respondent:", age,
+                        '<br>% Of All Surveys:',paste0(round(percent * 100 , 1),"%"),
+                        "<br>Number of Surveys:", n))) + geom_bar(stat="identity") + theme_minimal()+
+  xlab("Age") +ylab("")  +
+  theme(axis.title.y=element_text( margin = margin(r=20)),
+        axis.title.x=element_text( margin = margin(t=20))) +
+  scale_x_discrete(limits=c("less_24","under_34","under_44","under_54","under_64", "over_65"),
+                   labels=c("18-24","25-34","35-44","45-54","55-64","Over 65")) +
+  scale_y_continuous(labels=scales::percent)
+ggplotly(a, tooltip="text") %>% config(displayModeBar = T)
+```
+
+## Employment Type (of Survey Respondent)
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+a<-data %>%
+  filter(survey_rejected=="no" & gps_point_category=="survey location") %>% 
+  filter(!is.na(employment_type)) %>% 
+  count(employment_type) %>%
+  mutate(total=sum(n)) %>%
+  rowwise %>%
+  mutate(percent=n/total) %>%
+  ggplot(aes(reorder(employment_type, -percent), percent,
+             text=paste("Employment of Survey Respondent:", employment_type,
+                        '<br>% Of All Surveys:',paste0(round(percent * 100 , 1),"%"),
+                        "<br>Number of Surveys:", n))) + geom_bar(stat="identity") + theme_minimal()+
+  theme(axis.title.x=element_blank(),axis.title.y=element_text( margin = margin(r=20)),
+        axis.text.x=element_text(angle=45, hjust=1)) + ylab("") +
+  scale_y_continuous(labels=scales::percent) +
+  scale_x_discrete(labels=c("Professional","Retired","Service","Self-Employed","Other","Construction",
+                           "Retail", "Government","Recreation","Gaming"))
+ggplotly(a, tooltip="text") %>% config(displayModeBar = T)
+```
+
+## Household Income (of Survey Respondent)
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+a<-data %>%
+  filter(survey_rejected=="no" & gps_point_category=="survey location") %>% 
+  filter(!is.na(income)) %>% 
+  count(income) %>%
+  mutate(total=sum(n)) %>%
+  rowwise %>%
+  mutate(percent=n/total) %>%
+  ggplot(aes(income, percent,
+             text=paste("Income of Survey Respondent:", income,
+                        '<br>% Of All Surveys:',paste0(round(percent * 100 , 1),"%"),
+                        "<br>Number of Surveys:", n))) + geom_bar(stat="identity")+ theme_minimal() +
+  scale_y_continuous(labels=scales::percent) +
+  theme(axis.title.y=element_text( margin = margin(r=20)), 
+        axis.text.x=element_text(angle=45, hjust=1)) +
+  scale_x_discrete(limits=c("less_10","at_10_20","at_20_34","at_35_49","at_50_74","at_75_99","at_100_149","at_150_299","at_300_499","over_500"),
+      labels=c("Under $10K","$10-20K", "$20-35K", "$35-50K", "$50-75K", "$75-100K", "$100-150K", "$150-300K", "$300-500K", "Over $500K")) +
+  ylab("") +xlab("")
+ggplotly(a, tooltip="text") %>% config(displayModeBar = T)
+```
+
+#  Appendix A: Press Release
+
+```{r, out.width = "600px", echo=FALSE, warning=FALSE}
+knitr::include_graphics("H:/transportation monitoring/winter_summer_mode_travel_surveys/summer_2018/TRPA Survey/survey_development/press_release_2018_survey.png")
+
+```
+
+#  Appendix B: Survey Questions
+
+## Survey Questions: Full-Time Resident
+
+Home Location?
+
+What type of resident or visitor are you?
+
+Where were you right before you made the trip to this location?
+
+What is the name of the place you came from?
+
+What was your means of transportation to get to this location?
+
+What is your primary purpose of this specific trip to this location?
+
+How long did it take to get to this location?
+
+How long will you or did you stay at this location?
+
+Which area do you plan to go to after you leave this site?
+
+How many people traveled with you to this location, including yourself?
+
+How many children (under 18) are in your party?
+
+Describe your type of employment.
+
+Employment status?
+
+Age?
+
+Household Income?
+
+## Survey Questions: Seasonal Resident
+
+Permanent Home?
+
+Seasonal Home?
+
+How often do you live in Tahoe on an annual basis?
+
+What was your primary means of travel to enter the Tahoe Basin?
+
+What best describes where you are staying/living in the Tahoe Basin?
+
+Where were you right before you made the trip to this location?
+
+What is the name of the place you came from?
+
+What was your means of transportation to get to this location?
+
+What is your primary purpose of this specific trip to this location?
+
+How long did it take to get to this location?
+
+How long will you or did you stay at this location?
+
+Which area do you plan to go to after you leave this site?
+
+How many people traveled with you to this location, including yourself?
+
+How many children (under 18) are in your party?
+
+Describe your type of employment.
+
+Employment status?
+
+Age?
+
+Household Income?
+
+## Survey Questions: Day Visitor
+
+Home Location?
+
+How many times have you visited Lake Tahoe over the past year?
+
+What was your primary means of travel to enter the Tahoe Basin?
+
+Roughly how long did it take you to get from your home to your primary destination in Tahoe?
+
+Which highway/pass did you use to enter the basin?
+
+Where were you right before you made the trip to this location?
+
+What is the name of the place you came from?
+
+What was your means of transportation to get to this location?
+
+What is your primary purpose of this specific trip to this location?
+
+How long did it take to get to this location?
+
+How long will you or did you stay at this location?
+
+Which area do you plan to go to after you leave this site?
+
+What is the primary purpose of your visit to Tahoe?
+
+If you traveled to Tahoe in a vehicle, how many total people were in that vehicle, including yourself?
+
+How many people traveled with you to this location, including yourself?
+
+How many children (under 18) are in your party?
+
+How much money do you anticipate to spend while in Tahoe?
+
+Describe your type of employment.
+
+Employment status?
+
+Age?
+
+Household Income
+
+## Survey Questions: Overnight Visitor
+
+Home Location?
+
+Lodging Location?
+
+How many nights will you be staying?
+
+How many times have you visited Lake Tahoe over the past year?
+
+What was your primary means of travel to enter the Tahoe Basin?
+
+Roughly how long did it take you to get from your home to your primary destination in Tahoe?
+
+Which highway/pass did you use to enter the basin?
+
+What best describes where you are staying/living in the Tahoe Basin?
+
+Where were you right before you made the trip to this location?
+
+What is the name of the place you came from?
+
+What was your means of transportation to get to this location?
+
+What is your primary purpose of this specific trip to this location?
+
+How long did it take to get to this location?
+
+How long will you or did you stay at this location?
+
+Which area do you plan to go to after you leave this site?
+
+What is the primary purpose of your visit to Tahoe?
+
+If you traveled to Tahoe in a vehicle, how many total people were in that vehicle, including yourself?
+
+How many people traveled with you to this location, including yourself?
+
+How many children (under 18) are in your party?
+
+How much money do you anticipate to spend while in Tahoe?
+
+Describe your type of employment.
+
+Employment status?
+
+Age?
+
+Household Income?
+
+## Survey Questions: Commuter/External Worker
+
+Home Location?
+
+How many days per week do you commute to Tahoe for work?
+
+How long does it typically take to commute to work?
+
+What was your primary means of travel to enter the Tahoe Basin?
+
+Which highway/pass did you use to enter the basin?
+
+Where were you right before you made the trip to this location?
+
+What is the name of the place you came from?
+
+What was your means of transportation to get to this location?
+
+What is your primary purpose of this specific trip to this location?
+
+How long did it take to get to this location?
+
+How long will you or did you stay at this location?
+
+Which area do you plan to go to after you leave this site?
+
+Describe your type of employment.
+
+Employment status?
+
+Age?
+
+Household Income?
